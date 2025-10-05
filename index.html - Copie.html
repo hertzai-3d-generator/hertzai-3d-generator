@@ -1,0 +1,299 @@
+<!-- Add this to your existing HTML file, replacing the current <script> section -->
+
+<script>
+// API Base URL - change this when deploying
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+
+// DOM Elements
+const loginBtn = document.getElementById('loginBtn');
+const signupBtn = document.getElementById('signupBtn');
+const loginModal = document.getElementById('loginModal');
+const signupModal = document.getElementById('signupModal');
+const closeLogin = document.getElementById('closeLogin');
+const closeSignup = document.getElementById('closeSignup');
+const switchToSignup = document.getElementById('switchToSignup');
+const switchToLogin = document.getElementById('switchToLogin');
+const generateModelBtn = document.getElementById('generateModelBtn');
+const loadingIndicator = document.getElementById('loadingIndicator');
+const saveBtn = document.getElementById('saveBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const shareBtn = document.getElementById('shareBtn');
+const modelPreview = document.querySelector('.model-preview');
+
+// Authentication state
+let currentUser = null;
+let currentModel = null;
+
+// Check if user is logged in
+function checkAuth() {
+  const token = localStorage.getItem('hertza_token');
+  if (token) {
+    try {
+      // In a real app, you'd verify the token with the backend
+      currentUser = { token };
+      updateAuthUI();
+    } catch (e) {
+      localStorage.removeItem('hertza_token');
+    }
+  }
+}
+
+// Update UI based on auth state
+function updateAuthUI() {
+  if (currentUser) {
+    document.getElementById('loginBtn').style.display = 'none';
+    document.getElementById('signupBtn').style.display = 'none';
+    // Add user menu or profile button here
+  }
+}
+
+// API Functions
+async function apiCall(endpoint, options = {}) {
+  const url = `${API_BASE}/api${endpoint}`;
+  const config = {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    },
+    ...options
+  };
+  
+  if (currentUser) {
+    config.headers.Authorization = `Bearer ${currentUser.token}`;
+  }
+  
+  try {
+    const response = await fetch(url, config);
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'API error');
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('API Error:', error);
+    alert(error.message || 'Something went wrong');
+    throw error;
+  }
+}
+
+// Auth Functions
+async function registerUser(name, email, password) {
+  try {
+    const data = await apiCall('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password })
+    });
+    
+    localStorage.setItem('hertza_token', data.token);
+    currentUser = { token: data.token };
+    updateAuthUI();
+    closeModal(signupModal);
+    alert('Account created successfully!');
+  } catch (error) {
+    // Error handled in apiCall
+  }
+}
+
+async function loginUser(email, password) {
+  try {
+    const data = await apiCall('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+    
+    localStorage.setItem('hertza_token', data.token);
+    currentUser = { token: data.token };
+    updateAuthUI();
+    closeModal(loginModal);
+    alert('Logged in successfully!');
+  } catch (error) {
+    // Error handled in apiCall
+  }
+}
+
+// Model Functions
+async function generateModel(modelType, description, dimensions, complexity) {
+  if (!currentUser) {
+    alert('Please log in to generate models');
+    openModal(loginModal);
+    return null;
+  }
+  
+  try {
+    loadingIndicator.style.display = 'block';
+    modelPreview.innerHTML = '';
+    
+    const data = await apiCall('/models/generate', {
+      method: 'POST',
+      body: JSON.stringify({ modelType, description, dimensions, complexity })
+    });
+    
+    loadingIndicator.style.display = 'none';
+    currentModel = data.modelData;
+    
+    // Display model preview
+    modelPreview.innerHTML = `
+      <div style="text-align: center; padding: 20px;">
+        <img src="${data.modelData.preview}" alt="3D Model Preview" 
+             style="width: 200px; height: 200px; border-radius: 12px; margin-bottom: 20px;">
+        <h3>Custom 3D Model</h3>
+        <p>Ready for 3D printing</p>
+      </div>
+    `;
+    
+    // Enable action buttons
+    saveBtn.disabled = false;
+    downloadBtn.disabled = false;
+    shareBtn.disabled = false;
+    
+    return data;
+  } catch (error) {
+    loadingIndicator.style.display = 'none';
+    // Error handled in apiCall
+    return null;
+  }
+}
+
+async function saveModel(name, description, modelType, dimensions, complexity) {
+  if (!currentModel) {
+    alert('No model to save');
+    return;
+  }
+  
+  try {
+    await apiCall('/models/save', {
+      method: 'POST',
+      body: JSON.stringify({ 
+        name, 
+        description, 
+        modelType, 
+        dimensions, 
+        complexity, 
+        modelData: currentModel 
+      })
+    });
+    
+    alert('Model saved successfully!');
+  } catch (error) {
+    // Error handled in apiCall
+  }
+}
+
+// Modal Functions
+function openModal(modal) {
+  modal.style.display = 'flex';
+}
+
+function closeModal(modal) {
+  modal.style.display = 'none';
+}
+
+// Event Listeners
+document.addEventListener('DOMContentLoaded', () => {
+  checkAuth();
+  
+  // Auth modals
+  loginBtn.addEventListener('click', () => openModal(loginModal));
+  signupBtn.addEventListener('click', () => openModal(signupModal));
+  closeLogin.addEventListener('click', () => closeModal(loginModal));
+  closeSignup.addEventListener('click', () => closeModal(signupModal));
+  switchToSignup.addEventListener('click', () => {
+    closeModal(loginModal);
+    openModal(signupModal);
+  });
+  switchToLogin.addEventListener('click', () => {
+    closeModal(signupModal);
+    openModal(loginModal);
+  });
+
+  // Form submissions
+  document.querySelector('.modal-content form')?.addEventListener('submit', (e) => e.preventDefault());
+  
+  // Login form
+  document.querySelector('#loginModal .btn-primary').addEventListener('click', () => {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    if (email && password) {
+      loginUser(email, password);
+    }
+  });
+  
+  // Signup form
+  document.querySelector('#signupModal .btn-primary').addEventListener('click', () => {
+    const name = document.getElementById('signupName').value;
+    const email = document.getElementById('signupEmail').value;
+    const password = document.getElementById('signupPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (!name || !email || !password) {
+      alert('Please fill all fields');
+      return;
+    }
+    
+    if (password !== confirmPassword) {
+      alert('Passwords do not match');
+      return;
+    }
+    
+    registerUser(name, email, password);
+  });
+
+  // Generate model
+  generateModelBtn.addEventListener('click', () => {
+    const modelType = document.getElementById('modelType').value;
+    const description = document.getElementById('description').value;
+    const dimensions = {
+      width: parseInt(document.getElementById('width').value),
+      height: parseInt(document.getElementById('height').value),
+      depth: parseInt(document.getElementById('depth').value)
+    };
+    const complexity = document.getElementById('complexity').value;
+    
+    if (!description) {
+      alert('Please describe your model');
+      return;
+    }
+    
+    generateModel(modelType, description, dimensions, complexity);
+  });
+
+  // Save model
+  saveBtn.addEventListener('click', () => {
+    const name = prompt('Enter a name for your model:', 'My Custom Model');
+    if (name) {
+      const description = document.getElementById('description').value;
+      const modelType = document.getElementById('modelType').value;
+      const dimensions = {
+        width: parseInt(document.getElementById('width').value),
+        height: parseInt(document.getElementById('height').value),
+        depth: parseInt(document.getElementById('depth').value)
+      };
+      const complexity = document.getElementById('complexity').value;
+      
+      saveModel(name, description, modelType, dimensions, complexity);
+    }
+  });
+  
+  // Download and share (simulated)
+  downloadBtn.addEventListener('click', () => {
+    alert('STL file would be downloaded in a real implementation');
+  });
+  
+  shareBtn.addEventListener('click', () => {
+    alert('Share functionality would be implemented in a real app');
+  });
+
+  // Close modals when clicking outside
+  window.addEventListener('click', (e) => {
+    if (e.target === loginModal) closeModal(loginModal);
+    if (e.target === signupModal) closeModal(signupModal);
+  });
+
+  // Generate CTA button
+  document.getElementById('generateBtn').addEventListener('click', () => {
+    document.querySelector('.generator-section').scrollIntoView({ behavior: 'smooth' });
+  });
+});
+</script>
